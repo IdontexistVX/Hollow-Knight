@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+<base href="https://cdn.jsdelivr.net/gh/IdontexistVX/Hollow-Knight@main/">
+<meta charset="utf-8">
+<title>Unity WebGL Player | Hollow Knight</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden}#loading-text{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font:24px Arial}#unity-canvas{width:100vw;height:100vh;display:block}#unity-mobile-warning{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;background:rgba(0,0,0,.9);padding:20px;border-radius:8px;font:14px Arial}#fps-graph{position:fixed;top:12px;left:12px;width:200px;height:70px;background:rgba(0,0,0,.8);border-radius:6px;padding:10px;z-index:9999;transition:.3s}#fps-canvas{width:100%;height:100%;display:block}.savebtn{position:fixed;top:12px;right:12px;padding:10px 18px;cursor:pointer;background:rgba(50,50,50,.85);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;font:14px Arial;z-index:9999;transition:.3s}.savebtn:hover{background:rgba(70,70,70,.95)}.hidden{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="loading-text">Loading...</div>
+<div id="unity-mobile-warning">WebGL not supported on mobile</div>
+<canvas id="unity-canvas"></canvas>
+<div id="fps-graph" style="display:none"><canvas id="fps-canvas"></canvas></div>
+
+<!-- VIDEO FIX
+     Patches _JS_Video_Create in hktruffled.framework.js after it loads.
+     Unity calls _JS_Video_Create(url) with the embedded asset path like
+     "Assets/VideoClip/Prologue.webm". We redirect that to our GitHub CDN.
+     We also keep the sharedassets fallback and play() error handler.
+-->
+<script>
+(function() {
+    var LOG = '[VideoFix]';
+    var CDN = 'https://cdn.jsdelivr.net/gh/IdontexistVX/Hollow-Knight@main/Endings/';
+
+    function getFilename(url) {
+        return String(url).replace(/\\/g, '/').split('/').pop().split('?')[0];
+    }
+
+    function isVideoUrl(url) {
+        var u = String(url).toLowerCase();
+        return u.indexOf('.webm') !== -1 || u.indexOf('.mp4') !== -1 || u.indexOf('.ogv') !== -1;
+    }
+
+    // --- 1. fetch() intercept for sharedassets 404s ---
+    var _origFetch = window.fetch;
+    window.fetch = function(input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+        if (url.indexOf('sharedassets') !== -1 && url.indexOf('.resource') !== -1) {
+            return _origFetch.apply(window, arguments)
+                .then(function(resp) {
+                    if (!resp.ok) {
+                        console.log(LOG + ' sharedassets ' + resp.status + ' -> returning empty');
+                        return new Response(new Uint8Array(0), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+                    }
+                    return resp;
+                }).catch(function() {
+                    return new Response(new Uint8Array(0), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+                });
+        }
+        return _origFetch.apply(window, arguments);
+    };
+
+    // --- 2. Patch _JS_Video_Create after framework loads ---
+    // The framework defines _JS_Video_Create as a closure with videoInstances.
+    // We intercept it via Module after the loader script runs.
+    // We hook into createUnityInstance to install our patch at the right time.
+    var _origCreateUnityInstance = window.createUnityInstance;
+    function installVideoPatches() {
+        // Wait for _JS_Video_Create to exist on the asmLibraryArg binding
+        // by patching the global videoInstances mechanism via prototype
+        var _origCreateEl = document.createElement.bind(document);
+        document.createElement = function(tag) {
+            var el = _origCreateEl(tag);
+            if (typeof tag === 'string' && tag.toLowerCase() === 'video') {
+                // Intercept src setter to redirect Unity video URLs to CDN
+                var _src = '';
+                Object.defineProperty(el, 'src', {
+                    get: function() { return _src; },
+                    set: function(val) {
+                        if (val && isVideoUrl(val)) {
+                            var filename = getFilename(val);
+                            var cdnUrl = CDN + filename;
+                            console.log(LOG + ' redirecting video src: ' + filename + ' -> CDN');
+                            _src = cdnUrl;
+                            el.setAttribute('src', cdnUrl);
+                        } else {
+                            _src = val;
+                            if (val) el.setAttribute('src', val);
+                        }
+                    },
+                    configurable: true
+                });
+
+                // Fallback: if video errors or stalls, fire ended so Unity moves on
+                el.addEventListener('error', function() {
+                    console.log(LOG + ' video error on ' + getFilename(_src) + ' -> firing ended');
+                    setTimeout(function() { el.dispatchEvent(new Event('ended')); }, 0);
+                });
+                el.addEventListener('stalled', function() {
+                    setTimeout(function() { el.dispatchEvent(new Event('ended')); }, 500);
+                });
+                el.addEventListener('suspend', function() {
+                    if (el.readyState < 3) {
+                        setTimeout(function() {
+                            if (el.readyState < 3) {
+                                console.log(LOG + ' video stalled -> firing ended');
+                                el.dispatchEvent(new Event('ended'));
+                            }
+                        }, 1500);
+                    }
+                });
+            }
+            return el;
+        };
+        console.log(LOG + ' Video src redirect patch installed.');
+    }
+
+    // Install immediately - createElement patch must be in place before Unity creates videos
+    installVideoPatches();
+
+    // --- 3. play() error handler ---
+    var _origPlay = HTMLVideoElement.prototype.play;
+    HTMLVideoElement.prototype.play = function() {
+        var v = this;
+        var r = _origPlay.call(v);
+        if (r && typeof r.then === 'function') {
+            return r.catch(function(err) {
+                console.log(LOG + ' play() rejected (' + err.message + ') -> firing ended');
+                setTimeout(function() { v.dispatchEvent(new Event('ended')); }, 0);
+            });
+        }
+        return r;
+    };
+
+    console.log(LOG + ' All patches installed.');
+})();
+</script>
+
+<script>
+var lt=document.getElementById("loading-text"),cv=document.getElementById("unity-canvas"),mw=document.getElementById("unity-mobile-warning"),fg=document.getElementById("fps-graph"),fc=document.getElementById("fps-canvas");var lb=0,hd=false,tm_id;var tm='912.81',fh=[],ml=90;fc.width=180;fc.height=50;var ctx=fc.getContext('2d');var lft=performance.now(),fr=0,fps=60,sb;function uf(){var nt=performance.now(),dt=(nt-lft)/1000;lft=nt;fps=dt>0?1/dt:60;fr++;if(fr%3===0){fh.push(fps);if(fh.length>ml)fh.shift();ctx.clearRect(0,0,180,50);for(var i=0;i<fh.length;i++){var f=fh[i],h=Math.min(f/60,1)*35,c=f>50?'#0f0':f>30?'#fa0':'#f33';ctx.fillStyle=c;ctx.fillRect(i*2,50-h,1.8,h);}ctx.fillStyle='#fff';ctx.font='bold 13px monospace';ctx.shadowColor='#000';ctx.shadowBlur=4;ctx.fillText(Math.round(fps)+' FPS',6,16);ctx.shadowBlur=0;}requestAnimationFrame(uf);}function shw(){hd=false;fg.classList.remove('hidden');if(sb)sb.classList.remove('hidden');}function rst(){clearTimeout(tm_id);if(!hd){hd=true;fg.classList.add('hidden');if(sb)sb.classList.add('hidden');}tm_id=setTimeout(shw,5000);}document.addEventListener('keydown',rst);if(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)){var m=document.createElement('meta');m.name='viewport';m.content='width=device-width,height=device-height,initial-scale=1,user-scalable=no,shrink-to-fit=yes';document.head.appendChild(m);mw.style.display="block";setTimeout(function(){mw.style.display="none";},5000);}async function fwp(u){var r=await fetch(u),rd=r.body.getReader(),ch=[];while(true){var res=await rd.read();if(res.done)break;lb+=res.value.length;ch.push(res.value);lt.textContent=(lb/1048576).toFixed(2)+' MB / '+tm+' MB';}return URL.createObjectURL(new Blob(ch));}async function mf(p){var b=await Promise.all(p.map(fwp)),bl=await Promise.all(b.map(function(u){return fetch(u).then(function(r){return r.blob();});}));return URL.createObjectURL(new Blob(bl));}function gp(f,s,e){var arr=[];for(var i=s;i<=e;i++)arr.push(f+'.part'+i);return arr;}(async function(){var du=await mf(gp("Build/hktruffled.data",1,45));var wu=await mf(gp("Build/hktruffled.wasm",1,2));var sc=document.createElement("script");sc.src="Build/hktruffled.loader.js";sc.onload=function(){createUnityInstance(cv,{dataUrl:du,frameworkUrl:"Build/hktruffled.framework.js",codeUrl:wu,streamingAssetsUrl:"StreamingAssets",companyName:"Team Cherry",productName:"Hollow Knight",productVersion:"1.0"}).then(function(){lt.remove();asb();fg.style.display='block';uf();}).catch(alert);};document.body.appendChild(sc);})();function asb(){sb=document.createElement('button');sb.className='savebtn';sb.textContent='download';sb.onclick=sdl;document.body.appendChild(sb);}function odb(n){return new Promise(function(ok,bd){var r=indexedDB.open(n);r.onsuccess=function(){ok(r.result);};r.onerror=function(){bd(r.error);};});}function ga(d,s){return new Promise(function(ok,bd){var t=d.transaction([s],'readonly'),st=t.objectStore(s),r=st.getAll();r.onsuccess=function(){ok(r.result);};r.onerror=function(){bd(r.error);};});}async function sdl(){try{var dbs=await indexedDB.databases();var sv={},fd=false;for(var i=0;i<dbs.length;i++){var inf=dbs[i];var db=await odb(inf.name);for(var j=0;j<db.objectStoreNames.length;j++){var st=db.objectStoreNames[j];try{var dt=await ga(db,st);if(dt&&dt.length>0){var fx=dt.map(function(it){if(it.contents&&it.contents instanceof Uint8Array){return Object.assign({},it,{contents:Array.from(it.contents)});}return it;});sv[inf.name+'/'+st]=fx;fd=true;}}catch(e){}}db.close();}if(!fd){alert('No save found');return;}var js=JSON.stringify(sv),bl=new Blob([js],{type:'application/octet-stream'}),u=URL.createObjectURL(bl),a=document.createElement('a');a.href=u;a.download='hk_save.dat';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}catch(e){alert('Download failed: '+e.message);}}
+</script>
+</body>
+</html>
