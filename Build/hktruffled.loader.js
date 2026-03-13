@@ -12,7 +12,7 @@ function createUnityInstance(e, r, n) {
       default:
         console.log(e);
     }
-  }
+   } }
 
   function o(e) {
     var r = e.reason || e.error,
@@ -99,14 +99,31 @@ function l(e) {
             }
         });
 
-    return i.then(function(e) {
-        return e.parsedBody
-    }).catch(function(r) {
-        // Use the updated 'o' in the error message for better debugging
-        var n = "Failed to download file " + o;
-        "file:" == location.protocol ? t(n + ". Loading web pages via a file:// URL without a web server is not supported by this browser.", "error") : console.error(n);
-    });
-}
+/* CUTSCENE REDIRECT PATCH */
+function l(e) {
+    s(e);
+    var r = "no-store",
+        n = c.fetchWithProgress,
+        o = c[e];
+
+    // Check if the request is for a webm or the specific resource causing the 403
+    if (o && (o.endsWith(".webm") || o.includes("sharedassets5.resource"))) {
+        // We extract the filename (e.g., Prologue.webm)
+        var file = o.split("/").pop();
+        
+        // If it's a video, redirect to your Endings folder on GitHub Raw
+        if (o.endsWith(".webm")) {
+            o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/Endings/" + file;
+            console.log("[HK Video Redirect] Intercepted internal request. New URL:", o);
+        } 
+        // If it's the sharedassets5 file, redirect to GitHub Raw to avoid the 403
+        else {
+            o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/" + file;
+            console.log("[HK Resource Redirect] Bypassing jsDelivr for:", file);
+        }
+    }
+    /* END PATCH */
+
     var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
         i = n(o, {
             method: "GET",
@@ -114,11 +131,16 @@ function l(e) {
             productName: c.productName,
             control: r,
             mode: a,
-            onProgress: function(r) {
-                s(e, r)
-            }
+            onProgress: function(r) { s(e, r) }
         });
 
+    return i.then(function(e) {
+        return e.parsedBody
+    }).catch(function(r) {
+        console.error("Load failed for:", o);
+        return Promise.reject(r);
+    });
+}
     return i.then(function(e) {
         return e.parsedBody
     }).catch(function(r) {
@@ -198,7 +220,7 @@ function l(e) {
         c.removeRunDependency("dataUrl")
       })
     })
-  }
+  
   n = n || function() {};
   var c = {
     canvas: e,
@@ -400,3 +422,4 @@ function l(e) {
       n(1), delete c.startupErrorHandler, e(b)
     }), u()) : r("Your browser does not support WebAssembly.") : r("Your browser does not support WebGL.")
   })
+}
