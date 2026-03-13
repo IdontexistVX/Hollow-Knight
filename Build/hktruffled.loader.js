@@ -64,28 +64,49 @@ function createUnityInstance(e, r, n) {
     }
   }
 
-/* CUTSCENE REDIRECT PATCH */
+/* CUTSCENE & RESOURCE REDIRECT PATCH */
 function l(e) {
     s(e);
     var r = "no-store",
         n = c.fetchWithProgress,
         o = c[e];
 
-    // If Unity is requesting a video file or a specific resource that contains the videos
+    // Check if the requested file is a video or the problematic resource file
     if (o && (o.endsWith(".webm") || o.includes("sharedassets5.resource"))) {
+        var file = o.split("/").pop();
         
-        // If it's the specific sharedassets file causing the block, 
-        // we redirect it to a dummy or a specific video if needed.
-        // But usually, you want to catch the .webm requests specifically:
         if (o.endsWith(".webm")) {
-            var file = o.split("/").pop();
-            // Use RAW GitHub to bypass jsDelivr's 20MB limit
+            // Redirect videos to the Endings folder
             o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/Endings/" + file;
             console.log("[HK Cutscene Redirect]", file, "→", o);
+        } else if (o.includes("sharedassets5.resource")) {
+            // Redirect the blocked resource file to GitHub Raw (bypassing jsDelivr 20MB limit)
+            o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/" + file;
+            console.log("[HK Resource Redirect]", file, "→", o);
         }
     }
     /* END PATCH */
 
+    var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
+        i = n(o, {
+            method: "GET",
+            companyName: c.companyName,
+            productName: c.productName,
+            control: r,
+            mode: a,
+            onProgress: function(r) {
+                s(e, r)
+            }
+        });
+
+    return i.then(function(e) {
+        return e.parsedBody
+    }).catch(function(r) {
+        // Use the updated 'o' in the error message for better debugging
+        var n = "Failed to download file " + o;
+        "file:" == location.protocol ? t(n + ". Loading web pages via a file:// URL without a web server is not supported by this browser.", "error") : console.error(n);
+    });
+}
     var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
         i = n(o, {
             method: "GET",
@@ -113,7 +134,7 @@ function l(e) {
             ? t(n + ". Loading web pages via a file:// URL without a web server is not supported by this browser. Please use a local development web server to host Unity content, or use the Unity Build and Run option.", "error") 
             : console.error(n)
     })
-}
+
 
 
   function d() {
