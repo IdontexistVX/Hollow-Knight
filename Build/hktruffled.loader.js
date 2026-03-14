@@ -12,8 +12,46 @@ function createUnityInstance(e, r, n) {
       default:
         console.log(e);
     }
-   } }
+/* PROGRESSION LOCK FIX */
+function l(e) {
+    s(e);
+    var r = "no-store",
+        n = c.fetchWithProgress,
+        o = c[e];
 
+    // This catches the specific files that cause the progression hang
+    if (o && (o.includes("sharedassets5.resource") || o.endsWith(".webm"))) {
+        var file = o.split("/").pop();
+        
+        // Use GitHub Pages URL instead of Raw or jsDelivr
+        // Replace 'YourUsername' with your actual GitHub username
+        var baseURL = "https://IdontexistVX.github.io/Hollow-Knight/"; 
+        
+        if (o.endsWith(".webm")) {
+            o = baseURL + "Endings/" + file;
+        } else {
+            o = baseURL + file;
+        }
+        console.log("[Progression Fix] Redirecting to:", o);
+    }
+
+    var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
+        i = n(o, {
+            method: "GET",
+            companyName: c.companyName,
+            productName: c.productName,
+            control: r,
+            mode: a,
+            onProgress: function(r) { s(e, r) }
+        });
+
+    return i.then(function(e) {
+        return e.parsedBody
+    }).catch(function(r) {
+        console.error("Critical Load Failed - Game may lock up:", o);
+        return Promise.reject(r);
+    });
+}
   function o(e) {
     var r = e.reason || e.error,
       n = r ? r.toString() : e.message || e.reason || "",
@@ -64,40 +102,6 @@ function createUnityInstance(e, r, n) {
     }
   }
 
-/* CUTSCENE & RESOURCE REDIRECT PATCH */
-function l(e) {
-    s(e);
-    var r = "no-store",
-        n = c.fetchWithProgress,
-        o = c[e];
-
-    // Check if the requested file is a video or the problematic resource file
-    if (o && (o.endsWith(".webm") || o.includes("sharedassets5.resource"))) {
-        var file = o.split("/").pop();
-        
-        if (o.endsWith(".webm")) {
-            // Redirect videos to the Endings folder
-            o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/Endings/" + file;
-            console.log("[HK Cutscene Redirect]", file, "→", o);
-        } else if (o.includes("sharedassets5.resource")) {
-            // Redirect the blocked resource file to GitHub Raw (bypassing jsDelivr 20MB limit)
-            o = "https://raw.githubusercontent.com/IdontexistVX/Hollow-Knight/main/" + file;
-            console.log("[HK Resource Redirect]", file, "→", o);
-        }
-    }
-    /* END PATCH */
-
-    var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
-        i = n(o, {
-            method: "GET",
-            companyName: c.companyName,
-            productName: c.productName,
-            control: r,
-            mode: a,
-            onProgress: function(r) {
-                s(e, r)
-            }
-        });
 
 /* CUTSCENE REDIRECT PATCH */
 function l(e) {
@@ -124,15 +128,18 @@ function l(e) {
     }
     /* END PATCH */
 
-    var a = /file:\/\//.exec(o) ? "same-origin" : void 0,
-        i = n(o, {
-            method: "GET",
-            companyName: c.companyName,
-            productName: c.productName,
-            control: r,
-            mode: a,
-            onProgress: function(r) { s(e, r) }
-        });
+    /* CORS-FRIENDLY GET REQUEST */
+var i = n(o, {
+    method: "GET", // This is the standard, but we ensure it here
+    companyName: c.companyName,
+    productName: c.productName,
+    control: r,
+    mode: "cors",  // Explicitly request CORS
+    credentials: "omit", // Don't send cookies (helps avoid some security blocks)
+    onProgress: function(r) {
+        s(e, r)
+    }
+});
 
     return i.then(function(e) {
         return e.parsedBody
@@ -422,4 +429,5 @@ function l(e) {
       n(1), delete c.startupErrorHandler, e(b)
     }), u()) : r("Your browser does not support WebAssembly.") : r("Your browser does not support WebGL.")
   })
+  }
 }
